@@ -86,7 +86,8 @@ dependencies {
   // For < 0.71, this will be from the local maven repo
   // For > 0.71, this will be replaced by `com.facebook.react:react-android:$version` by react gradle plugin
   //noinspection GradleDynamicVersion
+  implementation'com.rabbitmq:amqp-client:5.21.0'
   implementation "com.facebook.react:react-native:+"
- implementation group: 'com.rabbitmq', name: 'amqp-client', version: '5.21.0'
+
 }
 

@@ -300,19 +300,19 @@ class RabbitMqConnection extends ReactContextBaseJavaModule  {
         this.context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("RabbitMqConnectionEvent", event);
     }
 
-    @Override
-    public void onCatalystInstanceDestroy() {
-        try {
-            new GuardedAsyncTask<Void, Void>(getReactApplicationContext()) {
-                @Override
-                protected void doInBackgroundGuarded(Void... params) {
-                    close();
-                }
-            }.execute().get();
-        } catch (InterruptedException ioe) {
-            Log.e("RabbitMqConnection", "onCatalystInstanceDestroy", ioe);
-        } catch (ExecutionException ee) {
-            Log.e("RabbitMqConnection", "onCatalystInstanceDestroy", ee);
-        }
-    }
+    // @Override
+    // public void onCatalystInstanceDestroy() {
+    //     try {
+    //         new GuardedAsyncTask<Void, Void>(getReactApplicationContext()) {
+    //             @Override
+    //             protected void doInBackgroundGuarded(Void... params) {
+    //                 close();
+    //             }
+    //         }.execute().get();
+    //     } catch (InterruptedException ioe) {
+    //         Log.e("RabbitMqConnection", "onCatalystInstanceDestroy", ioe);
+    //     } catch (ExecutionException ee) {
+    //         Log.e("RabbitMqConnection", "onCatalystInstanceDestroy", ee);
+    //     }
+    // }
 }
