@@ -26,9 +26,6 @@ const Rabbitmq = NativeModules.Rabbitmq
       }
     );
 
-export function multiply(x: number, y: number) {
-  return x;
-}
 const EventEmitter = new NativeEventEmitter(Rabbitmq);
 interface RabbitMQConfig {
   username: string;
