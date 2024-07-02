@@ -1,254 +1,231 @@
 #import "Rabbitmq.h"
-
+#import "RabbitMqDelegateLogger.h"
+#import "RabbitMqQueue.h"
+#import "EventEmitter.h"
+#import <RMQClient/RMQClient.h>
 
 @interface Rabbitmq ()
-    @property (nonatomic, readwrite) NSDictionary *config;
-    @property (nonatomic, readwrite) RMQConnection *connection;
-    @property (nonatomic, readwrite) id<RMQChannel> channel;
-    @property (nonatomic, readwrite) bool connected;
-    @property (nonatomic, readwrite) NSMutableArray *queues;
-    @property (nonatomic, readwrite) NSMutableArray *exchanges;
+@property (nonatomic, strong) NSDictionary *config;
+@property (nonatomic, strong) RMQConnection *connection;
+@property (nonatomic, strong) id<RMQChannel> channel;
+@property (nonatomic, assign) BOOL connected;
+@property (nonatomic, strong) NSMutableArray<RabbitMqQueue *> *queues;
+@property (nonatomic, strong) NSMutableArray<id<RMQExchange>> *exchanges;
 @end
 
 @implementation Rabbitmq
 RCT_EXPORT_MODULE()
 
-// Example method
-
-RCT_EXPORT_METHOD(initialize:(NSDictionary *) config)
+RCT_EXPORT_METHOD(initialize:(NSDictionary *)config)
 {
     self.config = config;
-
-    self.connected = false;
-
-    self.queues = [[NSMutableArray alloc] init];
-    self.exchanges = [[NSMutableArray alloc] init];
+    self.connected = NO;
+    self.queues = [NSMutableArray array];
+    self.exchanges = [NSMutableArray array];
 }
 
 RCT_EXPORT_METHOD(connect)
 {
-
     RabbitMqDelegateLogger *delegate = [[RabbitMqDelegateLogger alloc] init];
 
-    NSString *protocol = @"amqp";
-    if ([self.config objectForKey:@"ssl"] != nil && [[self.config objectForKey:@"ssl"] boolValue]){
-        protocol = @"amqps";
-    }
+    NSString *protocol = [self.config[@"ssl"] boolValue] ? @"amqps" : @"amqp";
+    NSString *uri = [NSString stringWithFormat:@"%@://%@:%@@%@:%@/%@", protocol, self.config[@"username"], self.config[@"password"], self.config[@"host"], self.config[@"port"], self.config[@"virtualhost"]];
 
-    NSString *uri = [NSString stringWithFormat:@"%@://%@:%@@%@:%@/%@", protocol, self.config[@"username"], self.config[@"password"], self.config[@"host"], self.config[@"port"], self.config[@"virtualhost"]];        
-    
-  
-    self.connection = [[RMQConnection alloc] initWithUri:uri 
-                                              channelMax:@65535 
-                                                frameMax:@(RMQFrameMax) 
+    self.connection = [[RMQConnection alloc] initWithUri:uri
+                                              channelMax:@65535
+                                                frameMax:@(RMQFrameMax)
                                                heartbeat:@10
-										  connectTimeout:@15
-											 readTimeout:@30
-										    writeTimeout:@30
-                                             syncTimeout:@10 
-                                                delegate:delegate
-                                           delegateQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)];
+                                           connectTimeout:@15
+                                              readTimeout:@30
+                                             writeTimeout:@30
+                                              syncTimeout:@10
+                                                 delegate:delegate
+                                            delegateQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)];
 
-    [self.connection start:^{ 
-        
-        self.connected = true;
-
+    [self.connection start:^{
+        self.connected = YES;
         [EventEmitter emitEventWithName:@"RabbitMqConnectionEvent" body:@{@"name": @"connected"}];
-
     }];
 }
 
 RCT_EXPORT_METHOD(close)
 {
-    for(id q in self.queues) {
-        [q cancelConsumer];
+    for (RabbitMqQueue *queue in self.queues) {
+        [queue cancelConsumer];
     }
-    
+
     [self.connection close];
     [self.queues removeAllObjects];
     [self.exchanges removeAllObjects];
-    
     self.connection = nil;
+    self.connected = NO;
 }
 
-RCT_EXPORT_METHOD(addQueue:(NSDictionary *) config arguments:(NSDictionary *)arguments)
+RCT_EXPORT_METHOD(addQueue:(NSDictionary *)config arguments:(NSDictionary *)arguments)
 {
-    if (self.connected){ 
+    if (self.connected) {
         self.channel = [self.connection createChannel];
-
         RabbitMqQueue *queue = [[RabbitMqQueue alloc] initWithConfig:config channel:self.channel];
-
         [self.queues addObject:queue];
     }
 }
 
-RCT_EXPORT_METHOD(bindQueue:(NSString *)exchange_name queue_name:(NSString *)queue_name routing_key:(NSString *)routing_key)
+RCT_EXPORT_METHOD(bindQueue:(NSString *)exchangeName queueName:(NSString *)queueName routingKey:(NSString *)routingKey)
 {
+    RabbitMqQueue *queue = [self findQueue:queueName];
+    id<RMQExchange> exchange = [self findExchange:exchangeName];
 
-    id queue_id = [self findQueue:queue_name];
-    id exchange_id = [self findExchange:exchange_name];
-
-    if (queue_id != nil && exchange_id != nil){
-        [queue_id bind:exchange_id routing_key:routing_key];
-    }
-    
-}
-
-RCT_EXPORT_METHOD(unbindQueue:(NSString *)exchange_name queue_name:(NSString *)queue_name routing_key:(NSString *)routing_key)
-{
-    id queue_id = [self findQueue:queue_name];
-    id exchange_id = [self findExchange:exchange_name];
-
-    if (queue_id != nil && exchange_id != nil){
-        [queue_id unbind:exchange_id routing_key:routing_key];
+    if (queue && exchange) {
+        [queue bind:exchange routingKey:routingKey];
     }
 }
 
-RCT_EXPORT_METHOD(removeQueue:(NSString *)queue_name)
+RCT_EXPORT_METHOD(unbindQueue:(NSString *)exchangeName queueName:(NSString *)queueName routingKey:(NSString *)routingKey)
 {
-    id queue_id = [self findQueue:queue_name];
+    RabbitMqQueue *queue = [self findQueue:queueName];
+    id<RMQExchange> exchange = [self findExchange:exchangeName];
 
-    if (queue_id != nil){
-        [queue_id delete];
+    if (queue && exchange) {
+        [queue unbind:exchange routingKey:routingKey];
     }
 }
 
-RCT_EXPORT_METHOD(basicAck:(NSString *)queue_name delivery_tag:(nonnull NSNumber *)delivery_tag)
+RCT_EXPORT_METHOD(removeQueue:(NSString *)queueName)
 {
-    id queue_id = [self findQueue:queue_name];
+    RabbitMqQueue *queue = [self findQueue:queueName];
 
-    if (queue_id != nil){
-        [queue_id ack:delivery_tag];
+    if (queue) {
+        [queue delete];
     }
 }
 
-RCT_EXPORT_METHOD(cancelConsumer:(NSString *)queue_name)
+RCT_EXPORT_METHOD(basicAck:(NSString *)queueName deliveryTag:(nonnull NSNumber *)deliveryTag)
 {
-    id queue_id = [self findQueue:queue_name];
+    RabbitMqQueue *queue = [self findQueue:queueName];
 
-    if (queue_id != nil){
-        [queue_id cancelConsumer];
+    if (queue) {
+        [queue ack:deliveryTag];
     }
 }
 
-RCT_EXPORT_METHOD(addExchange:(NSDictionary *) config)
+RCT_EXPORT_METHOD(cancelConsumer:(NSString *)queueName)
 {
+    RabbitMqQueue *queue = [self findQueue:queueName];
 
+    if (queue) {
+        [queue cancelConsumer];
+    }
+}
+
+RCT_EXPORT_METHOD(addExchange:(NSDictionary *)config)
+{
     RMQExchangeDeclareOptions options = RMQExchangeDeclareNoOptions;
-    
-    if ([config objectForKey:@"passive"] != nil && [[config objectForKey:@"passive"] boolValue]){
-        options = options | RMQExchangeDeclarePassive;
+
+    if ([config[@"passive"] boolValue]) {
+        options |= RMQExchangeDeclarePassive;
+    }
+    if ([config[@"durable"] boolValue]) {
+        options |= RMQExchangeDeclareDurable;
+    }
+    if ([config[@"autoDelete"] boolValue]) {
+        options |= RMQExchangeDeclareAutoDelete;
+    }
+    if ([config[@"internal"] boolValue]) {
+        options |= RMQExchangeDeclareInternal;
+    }
+    if ([config[@"NoWait"] boolValue]) {
+        options |= RMQExchangeDeclareNoWait;
     }
 
-    if ([config objectForKey:@"durable"] != nil && [[config objectForKey:@"durable"] boolValue]){
-        options = options | RMQExchangeDeclareDurable;
-    }
+    NSString *type = config[@"type"];
+    id<RMQExchange> exchange = nil;
 
-    if ([config objectForKey:@"autoDelete"] != nil && [[config objectForKey:@"autoDelete"] boolValue]){
-        options = options | RMQExchangeDeclareAutoDelete;
-    }
-
-    if ([config objectForKey:@"internal"] != nil && [[config objectForKey:@"internal"] boolValue]){
-        options = options | RMQExchangeDeclareInternal;
-    }
-
-    if ([config objectForKey:@"NoWait"] != nil && [[config objectForKey:@"NoWait"] boolValue]){
-        options = options | RMQExchangeDeclareNoWait;
-    }
-
-    
-    NSString *type = [config objectForKey:@"type"];
-
-    RMQExchange *exchange = nil;
     if ([type isEqualToString:@"fanout"]) {
-        exchange = [self.channel fanout:[config objectForKey:@"name"] options:options];
-    }else if ([type isEqualToString:@"direct"]) {
-        exchange = [self.channel direct:[config objectForKey:@"name"] options:options];
-    }else if ([type isEqualToString:@"topic"]) {
-        exchange = [self.channel topic:[config objectForKey:@"name"] options:options];
+        exchange = [self.channel fanout:config[@"name"] options:options];
+    } else if ([type isEqualToString:@"direct"]) {
+        exchange = [self.channel direct:config[@"name"] options:options];
+    } else if ([type isEqualToString:@"topic"]) {
+        exchange = [self.channel topic:config[@"name"] options:options];
     }
-    
-    if (exchange != nil){
+
+    if (exchange) {
         [self.exchanges addObject:exchange];
     }
-
 }
- 
-RCT_EXPORT_METHOD(publishToExchange:(NSString *)message exchange_name:(NSString *)exchange_name routing_key:(NSString *)routing_key message_properties:(NSDictionary *)message_properties)
+
+RCT_EXPORT_METHOD(publishToExchange:(NSString *)message exchangeName:(NSString *)exchangeName routingKey:(NSString *)routingKey messageProperties:(NSDictionary *)messageProperties)
 {
+    id<RMQExchange> exchange = [self findExchange:exchangeName];
 
-    id exchange_id = [self findExchange:exchange_name];
+    if (exchange) {
+        NSData *data = [message dataUsingEncoding:NSUTF8StringEncoding];
+        NSMutableArray<id<RMQBasicProperty>> *properties = [NSMutableArray array];
 
-    if (exchange_id != nil){
-
-        NSData* data = [message dataUsingEncoding:NSUTF8StringEncoding];
-
-        NSMutableArray *properties = [[NSMutableArray alloc] init];
-
-        if ([message_properties objectForKey:@"content_type"] != nil && [[message_properties objectForKey:@"content_type"] isMemberOfClass:[NSString class]]){
-            [properties addObject:[[RMQBasicContentType alloc] init:[[message_properties objectForKey:@"content_type"] stringValue]]];
+        if (messageProperties[@"content_type"]) {
+            [properties addObject:[[RMQBasicContentType alloc] initWithString:messageProperties[@"content_type"]]];
         }
-        if ([message_properties objectForKey:@"content_encoding"] != nil && [[message_properties objectForKey:@"content_encoding"] isMemberOfClass:[NSString class]]){
-            [properties addObject:[[RMQBasicContentEncoding alloc] init:[[message_properties objectForKey:@"content_encoding"] stringValue]]];
+        if (messageProperties[@"content_encoding"]) {
+            [properties addObject:[[RMQBasicContentEncoding alloc] initWithString:messageProperties[@"content_encoding"]]];
         }
-        if ([message_properties objectForKey:@"delivery_mode"] != nil){
-            [properties addObject:[[RMQBasicDeliveryMode alloc] init:[[message_properties objectForKey:@"delivery_mode"] intValue]]];
+        if (messageProperties[@"delivery_mode"]) {
+            [properties addObject:[[RMQBasicDeliveryMode alloc] initWithInt:[messageProperties[@"delivery_mode"] intValue]]];
         }
-        if ([message_properties objectForKey:@"priority"] != nil){
-            [properties addObject:[[RMQBasicPriority alloc] init:[[message_properties objectForKey:@"priority"] intValue]]];
+        if (messageProperties[@"priority"]) {
+            [properties addObject:[[RMQBasicPriority alloc] initWithInt:[messageProperties[@"priority"] intValue]]];
         }
-        if ([message_properties objectForKey:@"correlation_id"] != nil && [[message_properties objectForKey:@"correlation_id"] isMemberOfClass:[NSString class]]){
-            [properties addObject:[[RMQBasicCorrelationId alloc] init:[[message_properties objectForKey:@"correlation_id"] stringValue]]];
+        if (messageProperties[@"correlation_id"]) {
+            [properties addObject:[[RMQBasicCorrelationId alloc] initWithString:messageProperties[@"correlation_id"]]];
         }
-        if ([message_properties objectForKey:@"expiration"] != nil && [[message_properties objectForKey:@"expiration"] isMemberOfClass:[NSString class]]){
-            [properties addObject:[[RMQBasicExpiration alloc] init:[[message_properties objectForKey:@"expiration"] stringValue]]];
+        if (messageProperties[@"expiration"]) {
+            [properties addObject:[[RMQBasicExpiration alloc] initWithString:messageProperties[@"expiration"]]];
         }
-        if ([message_properties objectForKey:@"message_id"] != nil && [[message_properties objectForKey:@"message_id"] isMemberOfClass:[NSString class]]){
-            [properties addObject:[[RMQBasicMessageId alloc] init:[[message_properties objectForKey:@"message_id"] stringValue]]];
+        if (messageProperties[@"message_id"]) {
+            [properties addObject:[[RMQBasicMessageId alloc] initWithString:messageProperties[@"message_id"]]];
         }
-        if ([message_properties objectForKey:@"type"] != nil && [[message_properties objectForKey:@"type"] isMemberOfClass:[NSString class]]){
-            [properties addObject:[[RMQBasicType alloc] init:[[message_properties objectForKey:@"type"] stringValue]]];
+        if (messageProperties[@"type"]) {
+            [properties addObject:[[RMQBasicType alloc] initWithString:messageProperties[@"type"]]];
         }
-        if ([message_properties objectForKey:@"user_id"] != nil && [[message_properties objectForKey:@"user_id"] isMemberOfClass:[NSString class]]){
-            [properties addObject:[[RMQBasicUserId alloc] init:[[message_properties objectForKey:@"user_id"] stringValue]]];
+        if (messageProperties[@"user_id"]) {
+            [properties addObject:[[RMQBasicUserId alloc] initWithString:messageProperties[@"user_id"]]];
         }
-        if ([message_properties objectForKey:@"app_id"] != nil && [[message_properties objectForKey:@"app_id"] isMemberOfClass:[NSString class]]){
-            [properties addObject:[[RMQBasicAppId alloc] init:[[message_properties objectForKey:@"app_id"] stringValue]]];
+        if (messageProperties[@"app_id"]) {
+            [properties addObject:[[RMQBasicAppId alloc] initWithString:messageProperties[@"app_id"]]];
         }
-        if ([message_properties objectForKey:@"reply_to"] != nil && [[message_properties objectForKey:@"reply_to"] isMemberOfClass:[NSString class]]){
-            [properties addObject:[[RMQBasicReplyTo alloc] init:[[message_properties objectForKey:@"reply_to"] stringValue]]];
+        if (messageProperties[@"reply_to"]) {
+            [properties addObject:[[RMQBasicReplyTo alloc] initWithString:messageProperties[@"reply_to"]]];
         }
 
-        [exchange_id publish:data routingKey:routing_key properties:properties options:RMQBasicPublishNoOptions];
+        [exchange publish:data routingKey:routingKey properties:properties options:RMQBasicPublishNoOptions];
     }
 }
 
-RCT_EXPORT_METHOD(deleteExchange:(NSString *)exchange_name)
+RCT_EXPORT_METHOD(deleteExchange:(NSString *)exchangeName)
 {
-   id exchange_id = [self findExchange:exchange_name];
+    id<RMQExchange> exchange = [self findExchange:exchangeName];
 
-    if (exchange_id != nil){
-        [exchange_id delete];
+    if (exchange) {
+        [exchange delete];
     }
 }
 
-
-
--(id) findQueue:(NSString *)name {
-    id queue_id = nil;
-    for(id q in self.queues) {
-        if ([[q name] isEqualToString:name]){ queue_id = q; }
+- (RabbitMqQueue *)findQueue:(NSString *)name
+{
+    for (RabbitMqQueue *queue in self.queues) {
+        if ([queue.name isEqualToString:name]) {
+            return queue;
+        }
     }
-    return queue_id;
+    return nil;
 }
 
--(id) findExchange:(NSString *)name {
-    id exchange_id = nil;
-    for(id e in self.exchanges) {
-        if ([[e name] isEqualToString:name]){ exchange_id = e; }
+- (id<RMQExchange>)findExchange:(NSString *)name
+{
+    for (id<RMQExchange> exchange in self.exchanges) {
+        if ([exchange.name isEqualToString:name]) {
+            return exchange;
+        }
     }
-
-    return exchange_id;
+    return nil;
 }
 
 @end

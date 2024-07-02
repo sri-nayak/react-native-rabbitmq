@@ -3,6 +3,7 @@ package nl.kega.reactnativerabbitmq;
 import android.util.Log;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReadableMap;
@@ -18,39 +19,34 @@ public class RabbitMqConsumer extends DefaultConsumer {
 
     private RabbitMqQueue connection;
     private Channel channel;
-    
-    public RabbitMqConsumer(Channel channel, RabbitMqQueue connection){
-        super(channel);
 
+    public RabbitMqConsumer(Channel channel, RabbitMqQueue connection) {
+        super(channel);
         this.channel = channel;
         this.connection = connection;
     }
 
     @Override
-    public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException{
-       
-        String routing_key = envelope.getRoutingKey();
+    public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
+        String routingKey = envelope.getRoutingKey();
         String exchange = envelope.getExchange();
-        String content_type = properties.getContentType();
+        String contentType = properties.getContentType();
+        boolean isRedeliver = envelope.isRedeliver();
 
-        Boolean is_redeliver = envelope.isRedeliver();
+        String message = new String(body, StandardCharsets.UTF_8);
 
-        String message = new String(body, "UTF-8");
+        WritableMap messageParams = Arguments.createMap();
+        messageParams.putString("name", "message");
+        messageParams.putString("message", message);
+        messageParams.putString("routing_key", routingKey);
+        messageParams.putString("exchange", exchange);
+        messageParams.putString("content_type", contentType);
+        messageParams.putDouble("delivery_tag", envelope.getDeliveryTag());
+        messageParams.putBoolean("is_redeliver", isRedeliver);
 
-        WritableMap message_params = Arguments.createMap();
-        message_params.putString("name", "message");
-        message_params.putString("message", message);
-        message_params.putString("routing_key", routing_key);
-        message_params.putString("exchange", exchange);
-        message_params.putString("content_type", content_type);
-        message_params.putDouble("delivery_tag", envelope.getDeliveryTag());
-        message_params.putBoolean("is_redeliver", is_redeliver);
+        this.connection.onMessage(messageParams);
 
-        this.connection.onMessage(message_params);
-
-        //this.channel.basicAck(envelope.getDeliveryTag(), false);
+        // Uncomment this line if you want to automatically acknowledge messages
+        // this.channel.basicAck(envelope.getDeliveryTag(), false);
     }
-
-
-
 }

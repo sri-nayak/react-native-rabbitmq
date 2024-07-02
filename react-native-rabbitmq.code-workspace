@@ -1,0 +1,13 @@
+{
+  "folders": [
+    {
+      "name": "react-native-rabbitmq",
+      "path": "../../../../Downloads/react-native-rabbitmq/react-native-rabbitmq",
+    },
+    {
+      "name": "ztrust-authenticator",
+      "path": "..",
+    },
+  ],
+  "settings": {},
+}
