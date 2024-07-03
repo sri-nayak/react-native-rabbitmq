@@ -64,6 +64,7 @@ class RabbitMqConnection extends ReactContextBaseJavaModule  {
     public void initialize(ReadableMap config) {
         this.config = config;
         System.out.println("working atleast being called");
+        System.out.println(config);
         this.factory = new ConnectionFactory();
         this.factory.setUsername(this.config.getString("username"));
         this.factory.setPassword(this.config.getString("password"));
