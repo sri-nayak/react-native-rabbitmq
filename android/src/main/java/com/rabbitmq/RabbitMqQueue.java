@@ -1,4 +1,4 @@
-package nl.kega.reactnativerabbitmq;
+package com.rabbitmq;
 
 import android.util.Log;
 
@@ -18,6 +18,7 @@ import com.facebook.react.bridge.ReadableMapKeySetIterator;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.AlreadyClosedException;
+import com.rabbitmq.RabbitMqExchange;
 
 public class RabbitMqQueue {
 

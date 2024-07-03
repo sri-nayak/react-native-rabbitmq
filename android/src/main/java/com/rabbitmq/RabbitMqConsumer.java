@@ -1,4 +1,4 @@
-package nl.kega.reactnativerabbitmq;
+package com.rabbitmq;
 
 import android.util.Log;
 

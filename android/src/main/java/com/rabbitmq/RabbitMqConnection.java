@@ -1,4 +1,4 @@
-package nl.kega.reactnativerabbitmq;
+package com.rabbitmq;
 
 import android.util.Log;
 
@@ -30,8 +30,12 @@ import com.rabbitmq.client.RecoveryListener;
 import com.rabbitmq.client.Recoverable;
 import com.rabbitmq.client.RecoverableConnection;
 import com.rabbitmq.client.ConfirmListener;
+import com.facebook.react.module.annotations.ReactModule;
 
+
+@ReactModule(name = "Rabbitmq")
 class RabbitMqConnection extends ReactContextBaseJavaModule  {
+    public static String NAME="Rabbitmq";
 
     private ReactApplicationContext context;
 
@@ -53,7 +57,7 @@ class RabbitMqConnection extends ReactContextBaseJavaModule  {
 
     @Override
     public String getName() {
-        return "RabbitMqConnection";
+        return NAME;
     }
 
     @ReactMethod
